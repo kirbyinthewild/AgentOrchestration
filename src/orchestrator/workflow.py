@@ -3,6 +3,7 @@
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
+from .validator import ArtifactRetentionValidator
 
 
 class StepStatus(Enum):
@@ -14,12 +15,13 @@ class StepStatus(Enum):
 
 
 class WorkflowStep:
-    def __init__(self, name: str, handler: Callable, retries: int = 0, timeout: int = 300):
+    def __init__(self, name: str, handler: Callable, retries: int = 0, timeout: int = 300, retention_policy: Optional[Dict] = None):
         self.id = str(uuid4())
         self.name = name
         self.handler = handler
         self.retries = retries
         self.timeout = timeout
+        self.retention_policy = retention_policy
         self.status = StepStatus.PENDING
         self.result: Any = None
         self.error: Optional[str] = None
@@ -65,6 +67,12 @@ class WorkflowManager:
         workflow = self._workflows.get(workflow_id)
         if not workflow:
             return False
+
+        # Pre-dispatch validation for all steps
+        for step in workflow.steps:
+            if not ArtifactRetentionValidator.validate_transition(workflow.status.value, "running", step.retention_policy):
+                workflow.status = StepStatus.FAILED
+                return False
 
         workflow.status = StepStatus.RUNNING
         for step in workflow.steps:
